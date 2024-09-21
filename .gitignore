@@ -116,7 +116,6 @@ data
 *.log.json
 docs/modelzoo_statistics.md
 mmdet/.mim
-work_dirs/
 
 # Pytorch
 *.pth
@@ -124,3 +123,15 @@ work_dirs/
 *.sh~
 
 *.back 
+dataset/
+notebooks/test_image
+notebooks/tta_images
+
+# Ignore all files in this folder
+notebooks/results/*
+workdirs/*
+pretrained/*
+# But do not ignore the .keep file
+!notebooks/results/.keep
+!workdirs/README.md
+!pretrained/README.md
