@@ -1060,21 +1060,87 @@ class CoDeformDETRHead(DETRHead):
 
         return det_bboxes, det_labels
 
-    def aug_test_bboxes(self, feats, img_metas, rescale=False):
+    def aug_test_bboxes(self, feats, img_metas, rescale=False, with_nms=True):
         """Test det bboxes with test-time augmentation.
+
         Args:
-            feats (list[Tensor]): the outer list indicates test-time
-                augmentations and inner Tensor should have a shape NxCxHxW,
-                which contains features for all images in the batch.
-            img_metas (list[list[dict]]): the outer list indicates test-time
-                augs (multiscale, flip, etc.) and the inner list indicates
-                images in a batch. each dict has image information.
-            rescale (bool, optional): Whether to rescale the results.
-                Defaults to False.
+            feats (list[list[Tensor]]): List of features from multiple augmentations.
+                Each element corresponds to one augmentation and contains a list of
+                feature maps for each feature level.
+            img_metas (list[list[dict]]): List of image metadata for each augmentation.
+                Each element corresponds to one augmentation and contains metadata for
+                each image in the batch.
+            rescale (bool, optional): Whether to rescale the results to the original
+                image size. Defaults to False.
+            with_nms (bool, optional): Whether to apply Non-Maximum Suppression (NMS).
+                Defaults to True.
+
         Returns:
-            list[ndarray]: bbox results of each class
+            list[tuple[Tensor, Tensor]]: Each item in the result list is a tuple.
+                The first item is a tensor of shape (n, 5), where each row represents
+                a bounding box in the format (tl_x, tl_y, br_x, br_y, score).
+                The second item is a tensor of shape (n,), containing the class labels
+                for each bounding box.
         """
-        raise ValueError('Not implemented')
+        num_augs = len(feats)
+        num_imgs = len(img_metas[0])
+        assert (
+            num_imgs == 1
+        ), "Batch size > 1 is not supported for test-time augmentation."
+
+        result_list = []
+        for img_id in range(num_imgs):
+            # Collect augmented detections for each image
+            aug_bboxes = []
+            aug_scores = []
+            aug_labels = []
+            for aug_id in range(num_augs):
+                # Get features and img_metas for the current augmentation
+                x = [feat[img_id : img_id + 1] for feat in feats[aug_id]]
+                img_meta = img_metas[aug_id][img_id : img_id + 1]
+
+                # Forward pass
+                outs = self.forward(x, img_meta)
+
+                # Get detections
+                bbox_list = self.get_bboxes(
+                    *outs, img_meta, rescale=False, with_nms=False
+                )
+                bboxes, labels = bbox_list[0]
+
+                # Map bboxes back to the original image
+                img_shape = img_meta[0]["img_shape"]
+                scale_factor = img_meta[0]["scale_factor"]
+                flip = img_meta[0]["flip"]
+                flip_direction = img_meta[0].get("flip_direction", "horizontal")
+                bboxes[:, :4] = bbox_mapping_back(
+                    bboxes[:, :4], img_shape, scale_factor, flip, flip_direction
+                )
+
+                aug_bboxes.append(bboxes)
+                aug_labels.append(labels)
+
+            # Concatenate detections from all augmentations
+            merged_bboxes = torch.cat(aug_bboxes, dim=0)
+            merged_labels = torch.cat(aug_labels, dim=0)
+
+            # Apply NMS
+            if with_nms:
+                det_bboxes, keep_inds = batched_nms(
+                    merged_bboxes[:, :4],
+                    merged_bboxes[:, 4],
+                    merged_labels,
+                    self.test_cfg.nms,
+                )
+                det_bboxes = det_bboxes[: self.test_cfg.max_per_img]
+                det_labels = merged_labels[keep_inds][: self.test_cfg.max_per_img]
+            else:
+                det_bboxes = merged_bboxes
+                det_labels = merged_labels
+
+            result_list.append((det_bboxes, det_labels))
+
+        return result_list
 
     def simple_test_bboxes(self, feats, img_metas, rescale=False, return_encoder_output=False):
         """Test det bboxes without test-time augmentation.
