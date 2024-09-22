@@ -21,6 +21,10 @@ RUN apt-get update && apt-get install -y ffmpeg libsm6 libxext6 git ninja-build 
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Activate the conda environment
+RUN echo "source activate base" >> ~/.bashrc
+SHELL ["/bin/bash", "--login", "-c"]
+
 # Install MMCV
 RUN pip install --no-cache-dir --upgrade pip wheel setuptools
 RUN pip install --no-cache-dir mmcv-full==1.5.0 -f https://download.openmmlab.com/mmcv/dist/cu113/torch1.11.0/index.html
@@ -32,8 +36,10 @@ RUN pip install timm
 RUN mim install mmdet==2.25.3
 RUN pip install fairscale==0.4.13
 RUN pip install scipy==1.10.1
+RUN pip install matplotlib pycocotools six terminaltables fairscale scipy yapf timm fvcore tensorboard albumentations cython
+RUN pip install einops fvcore ensemble-boxes jupyterlab
 
 # Install etc.
 RUN pip install yapf==0.40.1
 
-WORKDIR /Co-DETR
+WORKDIR /workspace
